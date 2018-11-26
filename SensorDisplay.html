@@ -1,0 +1,249 @@
+<html>
+<head>
+<style>
+
+#ITE:before {
+	content: "Machine: "
+}
+
+#MG:before {
+	content: "MG-90: "
+}
+
+.sensorgroup {
+	background: #eee;
+	width: 400px;
+	padding: 10px
+}
+
+.sensorgroup .title { 
+	display: inline-block;
+	padding: 10px;
+	height: 20px;
+	font-size: 24px;
+}
+
+.sensor {
+	background: #333;
+	border: 1px solid black;
+	padding: 20px;
+	width: 58px;
+	height: 18px;
+	display: table-cell;
+	color: white;
+}
+
+.sensor.on {
+	animation: ON-ANIMATION 1s alternate infinite;
+	background: green;
+}
+
+.sensor.off {
+	background: gray;
+}
+
+@keyframes ON-ANIMATION {
+0% { background: darkgreen }
+100% { background: green }
+}
+
+
+@keyframes OFF-ANIMATION {
+0% { background: darkgray }
+100% { background: gray }
+}
+
+body {
+	font-family: sans-serif;
+}
+</style>
+<script>
+
+MACHINES = [
+	{ mg90: "ND80630298011033", name: "Hostler 3049", sensors: [
+		{ gpio: 1, name:"Pressure", type:"hard", invert: false },
+		{ gpio: 2, name:"10' Sonar", type:"soft", invert: true },
+		{ gpio: 3, name:"25' Sonar", type:"soft", invert: true },
+	]},
+	{ mg90: "ND80270058011033", name: "Hostler 3050", sensors: [
+		{ gpio: 1, name:"Pressure", type:"hard", invert: false },
+		{ gpio: 2, name:"10' Sonar", type:"soft", invert: true },
+	]},
+	{ mg90: "ND80370123011033", name: "Hostler Old Faithful", sensors: [
+		{ gpio: 1, name:"Pressure", type:"hard", invert: false },
+		{ gpio: 2, name:"25' Sonar", type:"soft", invert: true },
+	]},
+	{ mg90: "ND80270029011033", name: "Overhead 2090", sensors: [
+		{ gpio: 4, name:"Twist/Leg", type:"hard", invert: true },
+	]},
+	{ mg90: "ND80370121011033", name: "Overhead 2094", sensors: [
+		{ gpio: 4, name:"Twist/Leg", type:"hard", invert: true },
+	]},
+	{ mg90: "ND80630403011033", name: "Reachstacker", sensors: [
+		{ gpio: 4, name:"Twistlock", type:"hard", invert: false },
+	]},
+	{ mg90: "ND80370037011033", name: "Hello", sensors: [
+		{ gpio: 1, name:"Regular 1", type:"hard", invert: false },
+		{ gpio: 2, name:"Regular 2", type:"soft", invert: false },
+		{ gpio: 3, name:"Inverted 3", type:"hard", invert: true },
+		{ gpio: 4, name:"Inverted 4", type:"soft", invert: true },
+	]},
+]
+
+function SensorChannel(sensordiv, sensor) {
+	this.div = sensordiv
+	this.name = sensor.name
+	this.gpio = sensor.gpio
+	this.type = sensor.type
+	this.invert = sensor.invert
+	this.value = null
+	this.time = null
+	this.timeout = null
+	
+	this.indDiv = document.createElement( "div" )
+	this.indDiv.classList.add("sensor")
+	this.div.appendChild(this.indDiv)
+	
+	if ( sensor.type == "hard" ) {
+		this.indDiv.classList.add("double")
+	} else {
+		this.filterDiv = document.createElement( "div" )
+		this.filterDiv.classList.add("sensor")
+		this.div.appendChild(this.filterDiv)
+	}
+	
+	this.titleDiv = document.createElement( "div" )
+	this.titleDiv.innerText = this.name
+	this.titleDiv.classList.add("title")
+	this.div.appendChild(this.titleDiv)
+	
+	this.set = function( value, time ) {
+	
+		if ( this.type == "soft") {
+			window.clearTimeout(this.timeout)
+			this.timeout = window.setTimeout(() => {
+				if ( value == (this.invert?1:0) ) {
+					this.filterDiv.classList.remove("on")
+					this.filterDiv.classList.add("off")
+				} else {
+					this.filterDiv.classList.remove("off")
+					this.filterDiv.classList.add("on")
+				}
+			},5000)
+		}
+	
+		this.value = value
+		this.time = time
+		
+		if ( value == (this.invert?1:0) ) {
+			this.indDiv.classList.remove("on")
+			this.indDiv.classList.add("off")
+		} else {
+			this.indDiv.classList.remove("off")
+			this.indDiv.classList.add("on")
+		}
+		
+		this.updateTime(time)
+	}
+	
+	this.updateTime = function(t2) {
+		if ( this.value != null && (t2 - this.time) < 60000 ) {
+			this.indDiv.innerText = (t2 - this.time)/1000
+		} else {
+			this.indDiv.innerText = ""
+		}
+	}
+	
+}
+
+function SensorReader(parentDiv) {
+
+	var iteDiv = document.createElement("div")
+	iteDiv.id = "ITE"
+	var mgDiv = document.createElement("div")
+	mgDiv.id = "MG"
+	
+	parentDiv.appendChild(iteDiv)
+	parentDiv.appendChild(mgDiv)
+	
+	var sensorChannels = []
+	
+	this.NewMG90 = function(MG90ID) {
+	
+		this.Reset()
+		this.isReset = false
+		
+		var mg90
+		var mg90s = MACHINES.filter( (x) => { return x.mg90 == MG90ID } )
+		
+		if ( mg90s.length >= 1 ) { mg90 = mg90s[0] }
+		else { mg90 = 	{ mg90: MG90ID, name: "Unknown Vehicle", sensors: [
+		{ gpio: 1, name:"GPIO1", type:"soft" },
+		{ gpio: 2, name:"GPIO2", type:"soft" },
+		{ gpio: 3, name:"GPIO3", type:"soft" },
+		{ gpio: 4, name:"GPIO4", type:"soft" },
+		]} }
+		
+		iteDiv.innerText = mg90.name
+		mgDiv.innerText = MG90ID
+		mg90.sensors.forEach( (sensor) => {
+			var sensordiv = document.createElement( "div" )
+			sensordiv.classList.add( "sensorgroup" )
+			parentDiv.appendChild(sensordiv)
+			sensorChannels.push(new SensorChannel(sensordiv, sensor))
+		} ) 
+	}
+	
+	this.Report = function(gpio, value, time) {
+		channels = sensorChannels.filter( (x) => { return x.gpio == gpio } )
+		channels.forEach( ( channel ) => {
+			channel.set(value, time)
+		})
+	}
+	
+	this.Reset = function() {
+		if ( ! this.isReset ) {
+			this.isReset = true
+			iteDiv.innerText = "Sensor Display"
+			mgDiv.innerText = "No MG-90 Connected"
+			sensorChannels.forEach( ( k ) => { parentDiv.removeChild( k.div ) } )
+			sensorChannels = []
+		}
+	}
+	
+	this.isReset = false
+	this.Reset()
+	
+	this.Update = function() {
+		var t = new Date()
+		sensorChannels.forEach( (channel) => { channel.updateTime(t) } )
+	}
+	
+	this.updater = window.setInterval(this.Update,10)
+	
+	this.ESclient = new EventSource("http://localhost:3000")
+	this.ESclient.onmessage = ( function (msg) {
+	  console.log(msg.data)
+	  var m = JSON.parse(msg.data)
+	  if ( m.event == "goodbye" ) { this.Reset() }
+	  else if ( m.event == "hello" ) { this.NewMG90( m.message ) }
+	  else if ( m.event == "gpio" ) { this.Report( m.gpio, m.value, new Date(m.time) ) }
+	} ).bind(this)
+	this.ESclient.onerror = ( function (err) {
+	  this.Reset()
+	} ).bind(this)
+}
+
+
+function init() {
+	sr = new SensorReader(document.getElementById("sensorDisplay"))
+	
+}
+
+</script>
+</head>
+<body onload="init()">
+<div id="sensorDisplay">
+</div>
+</body>
+</html>
